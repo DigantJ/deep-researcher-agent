@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Deep Researcher Agent</title>
+<style>
+/* Futuristic dark UI - compact version */
+body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial; background:linear-gradient(135deg,#070717 0%,#091229 100%);color:#e9eefc;margin:0;min-height:100vh}
+.container{max-width:1100px;margin:40px auto;padding:24px}
+h1{font-size:36px;background:linear-gradient(90deg,#7b61ff,#00d4ff);-webkit-background-clip:text;color:transparent}
+.grid{display:grid;grid-template-columns:1fr 420px;gap:20px}
+.card{background:rgba(255,255,255,0.03);padding:18px;border-radius:14px;border:1px solid rgba(255,255,255,0.04);box-shadow:0 10px 30px rgba(2,6,23,0.6)}
+textarea{width:100%;min-height:120px;background:transparent;border:1px solid rgba(255,255,255,0.06);color:inherit;padding:12px;border-radius:8px}
+button{padding:10px 14px;border-radius:10px;border:none;cursor:pointer;background:linear-gradient(90deg,#7b61ff,#00d4ff);color:#02102a;font-weight:700}
+.results{white-space:pre-wrap;background:rgba(255,255,255,0.02);padding:12px;border-radius:8px;min-height:160px}
+.doc-list{max-height:360px;overflow:auto}
+.doc-item{padding:10px;border-radius:8px;margin-bottom:8px;background:rgba(255,255,255,0.02);cursor:pointer}
+.small{font-size:12px;color:rgba(255,255,255,0.6)}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Deep Researcher Agent</h1>
+  <div class="grid">
+    <div class="card">
+      <h3>Step 1: Ingest Documents</h3>
+      <p class="small">Paste JSON array of documents (each with title & text). Example: <span class="small">[{"title":"Paper A","text":"..."}]</span></p>
+      <textarea id="docsInput" placeholder='[{"title":"Sample doc","text":"This is the text of a document."}]'></textarea>
+      <div style="display:flex;gap:10px;margin-top:10px">
+        <button id="ingestBtn">Ingest</button>
+        <button id="clearBtn" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.06)">Clear</button>
+      </div>
+      <hr style="margin:14px 0;border:none;border-top:1px solid rgba(255,255,255,0.03)">
+      <h3>Step 2: Ask Questions</h3>
+      <textarea id="queryInput" placeholder="Ask anything about ingested docs..."></textarea>
+      <div style="display:flex;gap:10px;margin-top:10px">
+        <button id="askBtn">Ask</button>
+        <button id="exportBtn" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.06)">Export Answer</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Answer</h3>
+      <div id="answer" class="results">No answer yet</div>
+      <h4 style="margin-top:12px">Retrieved Contexts</h4>
+      <div id="docs" class="doc-list"></div>
+    </div>
+  </div>
+</div>
+<script>
+const API = location.hostname === 'localhost' ? 'http://localhost:8000' : (location.origin);
+document.getElementById('ingestBtn').onclick = async ()=>{
+    const txt = document.getElementById('docsInput').value.trim();
+    if(!txt){alert('Paste JSON documents to ingest');return;}
+    let docs;
+    try{docs = JSON.parse(txt)}catch(e){alert('Invalid JSON');return;}
+    const res = await fetch(API + '/ingest',{method:'POST',headers: {'Content-Type':'application/json'}, body: JSON.stringify({documents: docs})});
+    const data = await res.json();
+    alert('Ingested: ' + (data.count || 0));
+};
+document.getElementById('askBtn').onclick = async ()=>{
+    const q = document.getElementById('queryInput').value.trim();
+    if(!q){alert('Enter a query');return;}
+    document.getElementById('answer').innerText = 'Thinking...';
+    const res = await fetch(API + '/query',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({query: q, top_k:4})});
+    const data = await res.json();
+    if(data.error){document.getElementById('answer').innerText = 'Error: ' + data.error;return;}
+    document.getElementById('answer').innerText = data.answer;
+    const docs = data.contexts || [];
+    const docsDiv = document.getElementById('docs');
+    docsDiv.innerHTML = '';
+    docs.forEach(d=>{
+        const el = document.createElement('div');
+        el.className = 'doc-item';
+        el.innerHTML = '<strong>'+ (d.title || 'Untitled') +'</strong><div class="small">'+ (d.text||'').substring(0,300) +'...</div>';
+        docsDiv.appendChild(el);
+    });
+};
+document.getElementById('exportBtn').onclick = async ()=>{
+    const md = '# Query Answer\n\n**Question**:\n' + (document.getElementById('queryInput').value || '') + '\n\n**Answer**:\n' + (document.getElementById('answer').innerText || '') + '\n\n**Contexts**:\n';
+    const res = await fetch(API + '/export',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({markdown: md})});
+    if(res.ok){
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'research_export.md'; document.body.appendChild(a); a.click(); a.remove();
+    }else{
+        alert('Export failed');
+    }
+};
+document.getElementById('clearBtn').onclick = ()=>{document.getElementById('docsInput').value = '';};
+</script>
+</body>
+</html>
